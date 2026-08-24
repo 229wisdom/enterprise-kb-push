@@ -1,0 +1,7 @@
+# helm 包元信息
+apiVersion: v2
+name: enterprise-kb
+description: 企业级分级知识库（RAG + 部门密级权限）
+type: application
+version: 0.1.0
+appVersion: "1.0"

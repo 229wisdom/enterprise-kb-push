@@ -392,12 +392,10 @@ async function upload() {
   fd.append("clearance_level", document.getElementById("up-clear").value);
   fd.append("department_ids", document.getElementById("up-dept").value);
   const box = document.getElementById("up-result");
-  box.textContent = "上传解析中（大文件需等待）…";
+  box.textContent = "上传中…";
   try {
     const data = await api("/documents", { method: "POST", body: fd });
-    box.innerHTML = data.status === "ok"
-      ? `✅ 《${data.title}》解析成功`
-      : `❌ 解析失败：${data.fail_reason}`;
+    box.innerHTML = `✅ 《${data.title}》已接收，正在后台解析（到"文档"页查看状态）`;
   } catch (e) { box.textContent = "❌ " + e.message; }
 }
 

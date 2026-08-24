@@ -1,0 +1,17 @@
+# 默认配置（helm install 时可用 --set 覆盖）
+image:
+  repository: enterprise-kb   # 镜像名（需先构建并推送到镜像仓库）
+  tag: v1
+  pullPolicy: IfNotPresent
+
+service:
+  port: 8000
+
+# 模型配置（部署时注入；密钥走 --set 或 k8s Secret）
+env:
+  OLLAMA_BASE_URL: "http://host.docker.internal:11434"  # 集群内需改为可达的 Ollama 地址
+  OPENAI_BASE_URL: "https://api.deepseek.com"
+# OPENAI_API_KEY / JWT_SECRET 请用 Secret 注入，勿写在此文件
+
+persistence:
+  size: 5Gi        # 数据卷：文档原件 + 向量库 + SQLite

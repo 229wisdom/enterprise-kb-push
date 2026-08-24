@@ -1,0 +1,53 @@
+# 应用部署：1 个副本 + 数据卷挂载
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: enterprise-kb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: enterprise-kb
+  template:
+    metadata:
+      labels:
+        app: enterprise-kb
+    spec:
+      containers:
+        - name: app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          env:
+            - name: OLLAMA_BASE_URL
+              value: "{{ .Values.env.OLLAMA_BASE_URL }}"
+            - name: OPENAI_BASE_URL
+              value: "{{ .Values.env.OPENAI_BASE_URL }}"
+            - name: DATA_DIR
+              value: /data
+            - name: SQLITE_PATH
+              value: /data/app.db
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ekb-secrets       # 密钥由 Secret 提供（kubectl create secret）
+                  key: openai-api-key
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ekb-secrets
+                  key: jwt-secret
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: ekb-data

@@ -3,6 +3,10 @@
 # 运行: 见根目录 docker-compose.yml（推荐）或 docker run
 FROM python:3.11-slim
 
+# OCR（rapidocr 内的 opencv）需要的系统库
+RUN apt-get update && apt-get install -y --no-install-recommends libxcb1 libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # 先装依赖（利用镜像层缓存：依赖没变就不重装）

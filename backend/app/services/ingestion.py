@@ -44,6 +44,18 @@ def chunk_text(text: str, budget: int | None = None) -> list[str]:
     return chunks
 
 
+def ingest_document_async(doc_id: int) -> None:
+    """后台任务入口：自开数据库会话（请求会话在响应后已关闭，不能复用）。"""
+    from app.models.database import SessionLocal
+    db = SessionLocal()
+    try:
+        doc = db.get(Document, doc_id)
+        if doc is not None:
+            ingest_document(db, doc)
+    finally:
+        db.close()
+
+
 def ingest_document(db: Session, doc: Document) -> None:
     """把一份文档走完入库全流程，更新其 status。
 

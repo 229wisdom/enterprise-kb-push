@@ -3,7 +3,7 @@ import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -18,13 +18,14 @@ router = APIRouter(prefix="/documents", tags=["文档"])
 
 @router.post("")
 def upload_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile,
     clearance_level: int = Form(1),
     department_ids: str = Form(...),  # 逗号分隔，如 "1,2"
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    """上传文档并入库（同步解析，小文件秒级；异步队列留 v2）。
+    """上传文档：立即返回，解析在后台异步执行（对照 RAGFlow 的任务队列设计）。
 
     权限规则：员工只能挂到自己部门，密级不能超过自身密级；越权尝试记审计。
     """
@@ -50,7 +51,7 @@ def upload_document(
         db.add(DocumentDepartment(document_id=doc.id, department_id=dept_id))
     db.commit()
 
-    ingestion.ingest_document(db, doc)  # 同步解析；失败零切片（红线②）
+    background_tasks.add_task(ingestion.ingest_document_async, doc.id)  # 异步解析
     return {"id": doc.id, "title": doc.title, "status": doc.status, "fail_reason": doc.fail_reason}
 
 
@@ -127,8 +128,8 @@ def delete_document(doc_id: int, db: Session = Depends(get_db), user: User = Dep
 
 
 @router.post("/{doc_id}/retry")
-def retry_document(doc_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
-    """重试解析失败的文档（仅限 failed 状态）。"""
+def retry_document(doc_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
+    """重试解析失败的文档（仅限 failed 状态；异步执行）。"""
     doc = db.get(Document, doc_id)
     if doc is None:
         raise HTTPException(404, "文档不存在")
@@ -138,5 +139,5 @@ def retry_document(doc_id: int, db: Session = Depends(get_db), user: User = Depe
         raise HTTPException(400, "只有解析失败的文档需要重试")
     doc.status = "parsing"
     db.commit()
-    ingestion.ingest_document(db, doc)
-    return {"id": doc.id, "status": doc.status, "fail_reason": doc.fail_reason}
+    background_tasks.add_task(ingestion.ingest_document_async, doc.id)
+    return {"id": doc.id, "status": "parsing"}
