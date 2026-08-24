@@ -21,6 +21,20 @@ docker compose up -d --build
 open http://localhost:8000/docs    # 交互式 API 文档
 ```
 
+## 界面截图
+
+| 登录 | 对话问答（流式+引用） |
+|---|---|
+| ![登录](docs/screenshots/01-login.png) | ![问答](docs/screenshots/02-chat.png) |
+
+| 文档管理 | 审计日志 |
+|---|---|
+| ![文档](docs/screenshots/03-docs.png) | ![审计](docs/screenshots/04-audit.png) |
+
+| 管理后台（老板） | 模型设置（多厂商） |
+|---|---|
+| ![管理](docs/screenshots/05-admin.png) | ![设置](docs/screenshots/06-settings.png) |
+
 ## 架构
 
 - 逻辑视图 / 部署视图 / 数据模型 / 核心数据流：见 [docs/02-架构.md](docs/02-架构.md)
