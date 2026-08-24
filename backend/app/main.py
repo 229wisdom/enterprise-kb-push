@@ -22,7 +22,7 @@ def init_db() -> None:
     Base.metadata.create_all(engine)
 
 
-from app.routers import audit, auth, chat, documents, search, settings  # noqa: E402
+from app.routers import admin, audit, auth, chat, documents, search, settings  # noqa: E402
 
 app.include_router(auth.router)
 app.include_router(documents.router)
@@ -30,6 +30,7 @@ app.include_router(chat.router)
 app.include_router(audit.router)
 app.include_router(search.router)
 app.include_router(settings.router)
+app.include_router(admin.router)
 
 
 @app.get("/health")

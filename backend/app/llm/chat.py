@@ -36,3 +36,45 @@ def chat(db, system_prompt: str, user_prompt: str) -> str:
     except Exception as e:
         raise ChatError(f"LLM 调用失败: {e}") from e
     return resp.json()["choices"][0]["message"]["content"]
+
+
+def chat_stream(db, system_prompt: str, user_prompt: str):
+    """流式生成：逐段产出回答文本（SSE 用）。
+
+    用法: for delta in chat_stream(db, sys_p, user_p): ...（delta 是本次新增的字符）
+    """
+    import json as _json
+
+    from app.services import settings_svc
+    api_key = settings_svc.get(db, "llm_api_key")
+    base_url = settings_svc.get(db, "llm_base_url")
+    model = settings_svc.get(db, "chat_model")
+    if not api_key:
+        raise ChatError("未配置模型 API Key（请到 设置 页配置）")
+    try:
+        with httpx.stream(
+            "POST",
+            f"{base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": 0.1,
+                "stream": True,
+            },
+            timeout=180,
+        ) as resp:
+            resp.raise_for_status()
+            for line in resp.iter_lines():
+                if not line.startswith("data: ") or line == "data: [DONE]":
+                    continue
+                delta = _json.loads(line[6:])["choices"][0]["delta"].get("content")
+                if delta:
+                    yield delta
+    except ChatError:
+        raise
+    except Exception as e:
+        raise ChatError(f"LLM 流式调用失败: {e}") from e

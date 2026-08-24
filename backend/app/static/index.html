@@ -74,6 +74,7 @@
       <button onclick="showTab('docs', this)">📄 文档</button>
       <button onclick="showTab('audit', this)">📋 审计</button>
       <button onclick="showTab('settings', this)">⚙️ 设置</button>
+      <button id="nav-admin" class="hidden" onclick="showTab('admin', this)">👑 管理</button>
     </nav>
     <span class="who"><span id="whoami"></span><button onclick="logout()">退出</button></span>
   </header>
@@ -132,6 +133,28 @@
       <button onclick="saveSettings()">保存设置</button>
       <div id="set-result" style="margin-top:12px;font-size:14px"></div>
     </div>
+    <!-- 管理（仅老板） -->
+    <div class="card hidden" id="tab-admin">
+      <h2>👑 部门管理</h2>
+      <div class="row" style="margin-bottom:12px">
+        <input id="new-dept" placeholder="新部门名称">
+        <button onclick="createDept()">新建部门</button>
+      </div>
+      <div id="dept-list" style="margin-bottom:24px"></div>
+      <h2>👑 用户管理</h2>
+      <div class="row" style="margin-bottom:4px">
+        <input id="nu-name" placeholder="用户名">
+        <input id="nu-pass" placeholder="初始密码(≥6位)">
+      </div>
+      <div class="row" style="margin-bottom:12px">
+        <select id="nu-dept"></select>
+        <select id="nu-clear"><option value="1">密级1·普通</option><option value="2">密级2·内部</option><option value="3">密级3·机密</option></select>
+        <select id="nu-role"><option value="employee">员工</option><option value="manager">主管</option><option value="boss">老板</option></select>
+        <button onclick="createUser()">新建用户</button>
+      </div>
+      <div id="user-list"></div>
+      <div id="admin-result" style="margin-top:12px;font-size:14px"></div>
+    </div>
   </main>
 </div>
 
@@ -178,6 +201,7 @@ function enterApp() {
   document.getElementById("app-page").classList.remove("hidden");
   const roleName = { employee: "员工", manager: "主管", boss: "老板" }[me.role] || me.role;
   document.getElementById("whoami").textContent = `${me.username}（${roleName}·密级${me.clearance_level}）`;
+  if (me.role === "boss") document.getElementById("nav-admin").classList.remove("hidden");
 }
 
 function showTab(name, btn) {
@@ -188,6 +212,59 @@ function showTab(name, btn) {
   if (name === "docs") loadDocs();
   if (name === "audit") loadAudit();
   if (name === "settings") loadSettings();
+  if (name === "admin") loadAdmin();
+}
+
+let DEPTS = [];
+
+async function loadAdmin() {
+  try {
+    DEPTS = await api("/admin/departments");
+    document.getElementById("dept-list").innerHTML = DEPTS.map(d => `<span class="badge b-ok" style="margin-right:8px">${d.name}</span>`).join("");
+    document.getElementById("nu-dept").innerHTML = DEPTS.map(d => `<option value="${d.id}">${d.name}</option>`).join("");
+    const users = await api("/admin/users");
+    document.getElementById("user-list").innerHTML = `<table><tr><th>用户</th><th>部门</th><th>角色</th><th>密级</th><th>操作</th></tr>${users.map(u =>
+      `<tr><td>${u.username}</td><td>${u.department}</td>
+       <td><select id="role-${u.id}" style="width:auto;margin:0"><option value="employee" ${u.role==="employee"?"selected":""}>员工</option><option value="manager" ${u.role==="manager"?"selected":""}>主管</option><option value="boss" ${u.role==="boss"?"selected":""}>老板</option></select></td>
+       <td><select id="clear-${u.id}" style="width:auto;margin:0"><option value="1" ${u.clearance_level===1?"selected":""}>1</option><option value="2" ${u.clearance_level===2?"selected":""}>2</option><option value="3" ${u.clearance_level===3?"selected":""}>3</option></select></td>
+       <td><a href="javascript:void(0)" style="color:#2563eb" onclick="saveUser(${u.id},'${u.username}')">保存</a></td></tr>`).join("")}</table>`;
+  } catch (e) { document.getElementById("admin-result").textContent = "❌ " + e.message; }
+}
+
+async function createDept() {
+  const name = document.getElementById("new-dept").value.trim();
+  if (!name) return;
+  try {
+    await api("/admin/departments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+    document.getElementById("new-dept").value = "";
+    loadAdmin();
+  } catch (e) { alert("❌ " + e.message); }
+}
+
+async function createUser() {
+  const body = {
+    username: document.getElementById("nu-name").value.trim(),
+    password: document.getElementById("nu-pass").value,
+    department_id: parseInt(document.getElementById("nu-dept").value),
+    clearance_level: parseInt(document.getElementById("nu-clear").value),
+    role: document.getElementById("nu-role").value,
+  };
+  try {
+    await api("/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    document.getElementById("nu-name").value = ""; document.getElementById("nu-pass").value = "";
+    loadAdmin();
+  } catch (e) { alert("❌ " + e.message); }
+}
+
+async function saveUser(id, username) {
+  const body = {
+    role: document.getElementById("role-" + id).value,
+    clearance_level: parseInt(document.getElementById("clear-" + id).value),
+  };
+  try {
+    await api("/admin/users/" + id, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    alert(`✅ ${username} 权限已更新（立即生效）`);
+  } catch (e) { alert("❌ " + e.message); }
 }
 
 let PROVIDERS = [];
@@ -253,13 +330,40 @@ async function ask() {
   if (!q) return;
   document.getElementById("chat-q").value = "";
   const log = document.getElementById("chat-log");
-  log.insertAdjacentHTML("beforeend", `<div class="msg"><div class="q">🧑 ${q}</div><div class="a">思考中…</div></div>`);
+  log.insertAdjacentHTML("beforeend", `<div class="msg"><div class="q">🧑 ${q}</div><div class="a"></div></div>`);
   const box = log.lastElementChild.querySelector(".a");
   try {
-    const data = await api("/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: q }) });
-    box.textContent = data.answer;
-    if (data.citations.length) {
-      box.insertAdjacentHTML("beforeend", `<div class="cite">📎 引用：${data.citations.map(c => `[${c.ref}]《${c.doc_title}》切片${c.chunk_index}`).join("　")}</div>`);
+    // SSE 流式读取（fetch + ReadableStream，EventSource 不支持 POST+自定义头）
+    const res = await fetch("/chat/stream", {
+      method: "POST",
+      headers: Object.assign({ "Content-Type": "application/json" }, authHeader()),
+      body: JSON.stringify({ question: q })
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      box.textContent = "❌ " + (data.detail || "请求失败");
+      return;
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let citations = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split("\n\n");
+      buffer = events.pop();  // 最后一段可能不完整，留到下次
+      for (const ev of events) {
+        if (!ev.startsWith("data: ")) continue;
+        const data = JSON.parse(ev.slice(6));
+        if (data.type === "citations") citations = data.items;
+        else if (data.type === "token") { box.textContent += data.text; log.scrollTop = log.scrollHeight; }
+        else if (data.type === "error") box.textContent = "❌ " + data.text;
+      }
+    }
+    if (citations.length) {
+      box.insertAdjacentHTML("beforeend", `<div class="cite">📎 引用：${citations.map(c => `[${c.ref}]《${c.doc_title}》切片${c.chunk_index}`).join("　")}</div>`);
     }
   } catch (e) { box.textContent = "❌ " + e.message; }
   log.scrollTop = log.scrollHeight;
@@ -300,11 +404,26 @@ async function loadDocs() {
     const docs = await api("/documents");
     if (!docs.length) { box.textContent = "（暂无可看文档）"; return; }
     const badge = s => s === "ok" ? '<span class="badge b-ok">✅ 成功</span>' : s === "failed" ? '<span class="badge b-fail">❌ 失败</span>' : '<span class="badge b-parsing">⏳ 解析中</span>';
-    box.innerHTML = `<table><tr><th>文档</th><th>密级</th><th>状态</th></tr>${docs.map(d =>
-      `<tr><td><a href="javascript:void(0)" style="color:#2563eb" onclick="openDoc(${d.id},'${d.title}')">${d.title}</a></td><td>${"⭐".repeat(d.clearance_level)}</td><td>${badge(d.status)}${d.fail_reason ? " " + d.fail_reason.slice(0, 40) : ""}</td></tr>`).join("")}</table>`;
+    box.innerHTML = `<table><tr><th>文档</th><th>密级</th><th>状态</th><th>操作</th></tr>${docs.map(d =>
+      `<tr><td><a href="javascript:void(0)" style="color:#2563eb" onclick="openDoc(${d.id},'${d.title}')">${d.title}</a></td><td>${"⭐".repeat(d.clearance_level)}</td><td>${badge(d.status)}${d.fail_reason ? " " + d.fail_reason.slice(0, 40) : ""}</td><td>${d.status === "failed" ? `<a href="javascript:void(0)" style="color:#2563eb" onclick="retryDoc(${d.id})">重试</a> ` : ""}<a href="javascript:void(0)" style="color:#dc2626" onclick="deleteDoc(${d.id},'${d.title}')">删除</a></td></tr>`).join("")}</table>`;
   } catch (e) { box.textContent = "❌ " + e.message; }
 }
 
+async function deleteDoc(id, title) {
+  if (!confirm(`确定删除《${title}》？将同时删除其切片和向量，不可恢复。`)) return;
+  try {
+    await api("/documents/" + id, { method: "DELETE" });
+    loadDocs();
+  } catch (e) { alert("❌ " + e.message); }
+}
+
+async function retryDoc(id) {
+  try {
+    const data = await api("/documents/" + id + "/retry", { method: "POST" });
+    alert(data.status === "ok" ? "✅ 重试成功" : "❌ 仍失败：" + data.fail_reason);
+    loadDocs();
+  } catch (e) { alert("❌ " + e.message); }
+}
 async function loadAudit() {
   const box = document.getElementById("audit-list");
   try {

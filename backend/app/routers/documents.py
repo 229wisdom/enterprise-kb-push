@@ -90,3 +90,53 @@ def open_document_file(doc_id: int, db: Session = Depends(get_db), user: User = 
     if not path.exists():
         raise HTTPException(404, "原件文件已丢失")
     return FileResponse(path, filename=doc.title)
+
+
+def _can_manage(db: Session, user: User, doc: Document) -> bool:
+    """管理权限：上传者本人、同部门主管、老板。"""
+    if user.role == "boss" or doc.uploader_id == user.id:
+        return True
+    return user.role == "manager" and user.department_id in {
+        d.department_id for d in db.query(DocumentDepartment).filter_by(document_id=doc.id)
+    }
+
+
+@router.delete("/{doc_id}")
+def delete_document(doc_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
+    """删除文档：原件 + 切片 + 向量 + 关联关系全清，记审计。"""
+    doc = db.get(Document, doc_id)
+    if doc is None:
+        raise HTTPException(404, "文档不存在")
+    if not _can_manage(db, user, doc):
+        audit.log(db, user.id, "denied", f"doc:{doc_id}", "尝试删除无权限文档")
+        raise HTTPException(403, "权限不足：只有上传者/本部门主管/老板可删除")
+
+    from app.models.tables import Chunk
+    from app.storage import vector_store
+    vector_store.delete_by_doc(doc_id)                                    # 向量
+    db.query(Chunk).filter_by(document_id=doc_id).delete()                # 切片
+    db.query(DocumentDepartment).filter_by(document_id=doc_id).delete()   # 部门关联
+    path = Path(doc.filename)
+    if path.exists():
+        path.unlink()                                                     # 原件
+    title = doc.title
+    db.delete(doc)
+    db.commit()
+    audit.log(db, user.id, "perm_change", f"doc:{doc_id}", f"删除文档《{title}》")
+    return {"deleted": doc_id, "title": title}
+
+
+@router.post("/{doc_id}/retry")
+def retry_document(doc_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
+    """重试解析失败的文档（仅限 failed 状态）。"""
+    doc = db.get(Document, doc_id)
+    if doc is None:
+        raise HTTPException(404, "文档不存在")
+    if not _can_manage(db, user, doc):
+        raise HTTPException(403, "权限不足")
+    if doc.status != "failed":
+        raise HTTPException(400, "只有解析失败的文档需要重试")
+    doc.status = "parsing"
+    db.commit()
+    ingestion.ingest_document(db, doc)
+    return {"id": doc.id, "status": doc.status, "fail_reason": doc.fail_reason}
