@@ -1,0 +1,20 @@
+# 编排：一个应用容器 + 一个数据卷。Ollama 复用宿主机的（host.docker.internal）
+services:
+  app:
+    build: ./backend
+    image: enterprise-kb:v1
+    container_name: ekb-app
+    ports:
+      - "8000:8000"
+    env_file: .env                    # 密钥运行时注入，不进镜像（红线③）
+    environment:
+      # 容器里访问宿主机 Ollama 的专用主机名
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      DATA_DIR: /data
+      SQLITE_PATH: /data/app.db
+    volumes:
+      - kb_data:/data                 # 数据（文件+向量+数据库）持久化在卷里
+    restart: unless-stopped
+
+volumes:
+  kb_data:

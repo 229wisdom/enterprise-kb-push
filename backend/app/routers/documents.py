@@ -1,0 +1,92 @@
+"""文档接口：上传（F1）、列表。业务逻辑全在 services，这里只接参调服务。"""
+import shutil
+import uuid
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
+
+from app.core.config import settings
+from app.core.security import get_current_user
+from app.models.database import get_db
+from app.models.tables import Document, DocumentDepartment, User
+from app.services import audit, ingestion
+
+router = APIRouter(prefix="/documents", tags=["文档"])
+
+
+@router.post("")
+def upload_document(
+    file: UploadFile,
+    clearance_level: int = Form(1),
+    department_ids: str = Form(...),  # 逗号分隔，如 "1,2"
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """上传文档并入库（同步解析，小文件秒级；异步队列留 v2）。
+
+    权限规则：员工只能挂到自己部门，密级不能超过自身密级；越权尝试记审计。
+    """
+    dept_ids = [int(x) for x in department_ids.split(",") if x.strip()]
+    if not dept_ids:
+        raise HTTPException(400, "必须至少选择一个部门")
+    if user.role != "boss" and (set(dept_ids) - {user.department_id} or clearance_level > user.clearance_level):
+        audit.log(db, user.id, "denied", file.filename, "上传越权：跨部门或密级超限")
+        raise HTTPException(403, "权限不足：只能上传本部门且不高于自身密级的文档")
+
+    save_path = settings.data_dir / "files" / f"{uuid.uuid4().hex}_{file.filename}"
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    with save_path.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    doc = Document(
+        title=file.filename, filename=str(save_path),
+        uploader_id=user.id, clearance_level=clearance_level, status="parsing",
+    )
+    db.add(doc)
+    db.flush()
+    for dept_id in dept_ids:
+        db.add(DocumentDepartment(document_id=doc.id, department_id=dept_id))
+    db.commit()
+
+    ingestion.ingest_document(db, doc)  # 同步解析；失败零切片（红线②）
+    return {"id": doc.id, "title": doc.title, "status": doc.status, "fail_reason": doc.fail_reason}
+
+
+@router.get("")
+def list_documents(db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> list[dict]:
+    """列出【我权限内可见】的文档。"""
+    query = (
+        db.query(Document)
+        .join(DocumentDepartment, DocumentDepartment.document_id == Document.id)
+        .filter(Document.clearance_level <= user.clearance_level)
+    )
+    if user.role != "boss":
+        query = query.filter(DocumentDepartment.department_id == user.department_id)
+    docs = query.distinct().all()
+    return [
+        {"id": d.id, "title": d.title, "status": d.status,
+         "clearance_level": d.clearance_level, "fail_reason": d.fail_reason}
+        for d in docs
+    ]
+
+
+@router.get("/{doc_id}/file")
+def open_document_file(doc_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """打开/下载文档原件（带权限校验，越权记审计）。
+
+    校验规则与检索一致：部门匹配（或老板）AND 人密级 ≥ 文档密级。
+    """
+    doc = db.get(Document, doc_id)
+    if doc is None:
+        raise HTTPException(404, "文档不存在")
+    dept_ids = {d.department_id for d in db.query(DocumentDepartment).filter_by(document_id=doc.id)}
+    allowed = (user.role == "boss") or (user.department_id in dept_ids and user.clearance_level >= doc.clearance_level)
+    if not allowed:
+        audit.log(db, user.id, "denied", f"doc:{doc_id}", "尝试打开无权限文档")
+        raise HTTPException(403, "权限不足：该文档不在你的可见范围内")
+    path = Path(doc.filename)
+    if not path.exists():
+        raise HTTPException(404, "原件文件已丢失")
+    return FileResponse(path, filename=doc.title)

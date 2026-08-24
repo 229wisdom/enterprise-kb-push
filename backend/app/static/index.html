@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>企业级分级知识库</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "PingFang SC", sans-serif; background: #f5f6f8; color: #1a1a1a; }
+  .hidden { display: none !important; }
+
+  /* 登录页 */
+  #login-page { max-width: 360px; margin: 15vh auto; background: #fff; padding: 40px; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,.08); }
+  #login-page h1 { font-size: 20px; text-align: center; margin-bottom: 8px; }
+  #login-page .sub { text-align: center; color: #888; font-size: 13px; margin-bottom: 24px; }
+  input, select, textarea { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-bottom: 12px; }
+  button { width: 100%; padding: 10px; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
+  button:hover { background: #1d4ed8; }
+  .err { color: #dc2626; font-size: 13px; margin-top: 8px; text-align: center; }
+
+  /* 主界面 */
+  header { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 12px 24px; display: flex; align-items: center; gap: 16px; }
+  header .logo { font-weight: 700; font-size: 16px; }
+  header .who { margin-left: auto; font-size: 13px; color: #666; }
+  header .who button { width: auto; padding: 4px 12px; font-size: 12px; background: #ef4444; margin-left: 8px; }
+  nav { display: flex; gap: 4px; }
+  nav button { width: auto; padding: 6px 16px; background: transparent; color: #555; font-size: 14px; border-radius: 8px; }
+  nav button.active { background: #2563eb; color: #fff; }
+  main { max-width: 860px; margin: 24px auto; padding: 0 16px; }
+  .card { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+  .card h2 { font-size: 16px; margin-bottom: 16px; }
+
+  /* 问答 */
+  #chat-log { min-height: 200px; margin-bottom: 12px; }
+  .msg { margin-bottom: 16px; }
+  .msg .q { font-weight: 600; margin-bottom: 4px; }
+  .msg .a { background: #f0f7ff; border-radius: 8px; padding: 12px; line-height: 1.7; white-space: pre-wrap; }
+  .msg .cite { font-size: 12px; color: #2563eb; margin-top: 6px; }
+  .row { display: flex; gap: 8px; }
+  .row input, .row textarea { flex: 1; margin-bottom: 0; }
+  .row button { width: 100px; }
+
+  /* 列表 */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid #eee; }
+  th { color: #888; font-weight: 500; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  .b-ok { background: #dcfce7; color: #16a34a; }
+  .b-fail { background: #fee2e2; color: #dc2626; }
+  .b-parsing { background: #fef9c3; color: #a16207; }
+</style>
+</head>
+<body>
+
+<!-- 登录页 -->
+<div id="login-page">
+  <h1>🏢 企业级分级知识库</h1>
+  <p class="sub">部门隔离 · 密级分级 · 带引用的 AI 问答</p>
+  <input id="login-user" placeholder="用户名" value="">
+  <input id="login-pass" type="password" placeholder="密码">
+  <button onclick="login()">登录</button>
+  <div class="err" id="login-err"></div>
+  <p class="sub" style="margin-top:16px">演示账号：tech_emp/tech123 · fin_emp/fin123 · boss/boss123</p>
+</div>
+
+<!-- 主界面 -->
+<div id="app-page" class="hidden">
+  <header>
+    <span class="logo">🏢 企业知识库</span>
+    <nav>
+      <button class="active" onclick="showTab('chat', this)">💬 问答</button>
+      <button onclick="showTab('search', this)">🔍 检索</button>
+      <button onclick="showTab('upload', this)">📤 上传</button>
+      <button onclick="showTab('docs', this)">📄 文档</button>
+      <button onclick="showTab('audit', this)">📋 审计</button>
+      <button onclick="showTab('settings', this)">⚙️ 设置</button>
+    </nav>
+    <span class="who"><span id="whoami"></span><button onclick="logout()">退出</button></span>
+  </header>
+  <main>
+    <!-- 问答 -->
+    <div class="card" id="tab-chat">
+      <h2>💬 对话问答（只答你权限内的资料）</h2>
+      <div id="chat-log"></div>
+      <div class="row">
+        <input id="chat-q" placeholder="输入问题，回车发送" onkeydown="if(event.key==='Enter')ask()">
+        <button onclick="ask()">发送</button>
+      </div>
+    </div>
+    <!-- 检索 -->
+    <div class="card hidden" id="tab-search">
+      <h2>🔍 检索定位（找到数据在哪个文件）</h2>
+      <div class="row">
+        <input id="search-q" placeholder="输入关键词或问题" onkeydown="if(event.key==='Enter')doSearch()">
+        <button onclick="doSearch()">检索</button>
+      </div>
+      <div id="search-result" style="margin-top:16px"></div>
+    </div>
+    <!-- 上传 -->
+    <div class="card hidden" id="tab-upload">
+      <h2>📤 上传文档</h2>
+      <input type="file" id="up-file">
+      <select id="up-dept"><option value="1">技术部</option><option value="2">财务部</option><option value="3">总裁办</option></select>
+      <select id="up-clear"><option value="1">密级 1·普通</option><option value="2">密级 2·内部</option><option value="3">密级 3·机密</option></select>
+      <button onclick="upload()">上传并解析</button>
+      <div id="up-result" style="margin-top:12px;font-size:14px"></div>
+    </div>
+    <!-- 文档列表 -->
+    <div class="card hidden" id="tab-docs">
+      <h2>📄 我可见的文档</h2>
+      <div id="docs-list">加载中…</div>
+    </div>
+    <!-- 审计 -->
+    <div class="card hidden" id="tab-audit">
+      <h2>📋 审计日志</h2>
+      <div id="audit-list">加载中…</div>
+    </div>
+    <!-- 设置 -->
+    <div class="card hidden" id="tab-settings">
+      <h2>⚙️ 系统设置（模型配置）</h2>
+      <p style="font-size:13px;color:#888;margin-bottom:12px">选择模型厂商后自动填充接口地址，只需填你的 API Key。留空保存 = 不修改该项。</p>
+      <label style="font-size:13px">模型厂商</label>
+      <select id="set-provider" onchange="onProviderChange()"></select>
+      <div id="set-provider-note" style="font-size:12px;color:#2563eb;margin:-6px 0 12px"></div>
+      <label style="font-size:13px">API 地址（OpenAI 兼容）</label>
+      <input id="set-baseurl" placeholder="https://api.deepseek.com">
+      <label style="font-size:13px">模型名</label>
+      <input id="set-model" list="model-suggestions" placeholder="deepseek-chat">
+      <datalist id="model-suggestions"></datalist>
+      <label style="font-size:13px">API Key</label>
+      <input id="set-key" placeholder="sk-...（当前值不显示，仅可覆盖）">
+      <button onclick="saveSettings()">保存设置</button>
+      <div id="set-result" style="margin-top:12px;font-size:14px"></div>
+    </div>
+  </main>
+</div>
+
+<script>
+const API = "";
+let token = localStorage.getItem("ekb_token");
+let me = JSON.parse(localStorage.getItem("ekb_user") || "null");
+
+function authHeader() { return { "Authorization": "Bearer " + token }; }
+
+async function api(path, opts = {}) {
+  opts.headers = Object.assign({}, authHeader(), opts.headers || {});
+  const res = await fetch(API + path, opts);
+  if (res.status === 401) { logout(); throw new Error("登录过期"); }
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || "请求失败");
+  return data;
+}
+
+async function login() {
+  const u = document.getElementById("login-user").value.trim();
+  const p = document.getElementById("login-pass").value;
+  try {
+    const res = await fetch(API + "/auth/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: u, password: p })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "登录失败");
+    token = data.token; me = data.user;
+    localStorage.setItem("ekb_token", token);
+    localStorage.setItem("ekb_user", JSON.stringify(me));
+    enterApp();
+  } catch (e) { document.getElementById("login-err").textContent = e.message; }
+}
+
+function logout() {
+  localStorage.removeItem("ekb_token"); localStorage.removeItem("ekb_user");
+  location.reload();
+}
+
+function enterApp() {
+  document.getElementById("login-page").classList.add("hidden");
+  document.getElementById("app-page").classList.remove("hidden");
+  const roleName = { employee: "员工", manager: "主管", boss: "老板" }[me.role] || me.role;
+  document.getElementById("whoami").textContent = `${me.username}（${roleName}·密级${me.clearance_level}）`;
+}
+
+function showTab(name, btn) {
+  document.querySelectorAll("main .card").forEach(c => c.classList.add("hidden"));
+  document.getElementById("tab-" + name).classList.remove("hidden");
+  document.querySelectorAll("nav button").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  if (name === "docs") loadDocs();
+  if (name === "audit") loadAudit();
+  if (name === "settings") loadSettings();
+}
+
+let PROVIDERS = [];
+
+async function loadSettings() {
+  try {
+    if (!PROVIDERS.length) PROVIDERS = await api("/settings/providers");
+    const sel = document.getElementById("set-provider");
+    sel.innerHTML = PROVIDERS.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
+    onProviderChange();
+    const s = await api("/settings");
+    document.getElementById("set-baseurl").placeholder = s.llm_base_url;
+    document.getElementById("set-model").placeholder = s.chat_model;
+    document.getElementById("set-key").placeholder = "当前: " + s.llm_api_key + "（留空=不修改）";
+  } catch (e) {}
+}
+
+function onProviderChange() {
+  const p = PROVIDERS.find(x => x.id === document.getElementById("set-provider").value);
+  if (!p) return;
+  document.getElementById("set-baseurl").value = p.base_url;
+  document.getElementById("set-provider-note").textContent = p.note;
+  document.getElementById("model-suggestions").innerHTML =
+    p.models.map(m => `<option value="${m}">`).join("");
+  if (p.models.length) document.getElementById("set-model").value = p.models[0];
+}
+
+async function saveSettings() {
+  const body = {};
+  const b = document.getElementById("set-baseurl").value.trim();
+  const m = document.getElementById("set-model").value.trim();
+  const k = document.getElementById("set-key").value.trim();
+  if (b) body.llm_base_url = b;
+  if (m) body.chat_model = m;
+  if (k) body.llm_api_key = k;
+  const box = document.getElementById("set-result");
+  try {
+    const data = await api("/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    box.textContent = data.updated.length ? "✅ 已更新: " + data.updated.join(", ") : "未修改任何项";
+  } catch (e) { box.textContent = "❌ " + e.message; }
+}
+
+async function openDoc(id, title) {
+  try {
+    const res = await fetch("/documents/" + id + "/file", { headers: authHeader() });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert("❌ " + (data.detail || "打开失败"));
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");   // 用 <a download> 保证文件名正确
+    a.href = url;
+    a.download = title;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) { alert("❌ " + e.message); }
+}
+
+async function ask() {
+  const q = document.getElementById("chat-q").value.trim();
+  if (!q) return;
+  document.getElementById("chat-q").value = "";
+  const log = document.getElementById("chat-log");
+  log.insertAdjacentHTML("beforeend", `<div class="msg"><div class="q">🧑 ${q}</div><div class="a">思考中…</div></div>`);
+  const box = log.lastElementChild.querySelector(".a");
+  try {
+    const data = await api("/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: q }) });
+    box.textContent = data.answer;
+    if (data.citations.length) {
+      box.insertAdjacentHTML("beforeend", `<div class="cite">📎 引用：${data.citations.map(c => `[${c.ref}]《${c.doc_title}》切片${c.chunk_index}`).join("　")}</div>`);
+    }
+  } catch (e) { box.textContent = "❌ " + e.message; }
+  log.scrollTop = log.scrollHeight;
+}
+
+async function doSearch() {
+  const q = document.getElementById("search-q").value.trim();
+  if (!q) return;
+  const box = document.getElementById("search-result");
+  box.textContent = "检索中…";
+  try {
+    const data = await api("/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: q }) });
+    if (!data.total) { box.textContent = "未查到（权限范围内无相关内容）"; return; }
+    box.innerHTML = data.hits.map(h => `<div class="msg"><div class="a"><b>《${h.doc_title}》</b> 切片${h.chunk_index}（相关度 ${h.rrf}）<br>${h.content}</div></div>`).join("");
+  } catch (e) { box.textContent = "❌ " + e.message; }
+}
+
+async function upload() {
+  const f = document.getElementById("up-file").files[0];
+  if (!f) { alert("先选择文件"); return; }
+  const fd = new FormData();
+  fd.append("file", f);
+  fd.append("clearance_level", document.getElementById("up-clear").value);
+  fd.append("department_ids", document.getElementById("up-dept").value);
+  const box = document.getElementById("up-result");
+  box.textContent = "上传解析中（大文件需等待）…";
+  try {
+    const data = await api("/documents", { method: "POST", body: fd });
+    box.innerHTML = data.status === "ok"
+      ? `✅ 《${data.title}》解析成功`
+      : `❌ 解析失败：${data.fail_reason}`;
+  } catch (e) { box.textContent = "❌ " + e.message; }
+}
+
+async function loadDocs() {
+  const box = document.getElementById("docs-list");
+  try {
+    const docs = await api("/documents");
+    if (!docs.length) { box.textContent = "（暂无可看文档）"; return; }
+    const badge = s => s === "ok" ? '<span class="badge b-ok">✅ 成功</span>' : s === "failed" ? '<span class="badge b-fail">❌ 失败</span>' : '<span class="badge b-parsing">⏳ 解析中</span>';
+    box.innerHTML = `<table><tr><th>文档</th><th>密级</th><th>状态</th></tr>${docs.map(d =>
+      `<tr><td><a href="javascript:void(0)" style="color:#2563eb" onclick="openDoc(${d.id},'${d.title}')">${d.title}</a></td><td>${"⭐".repeat(d.clearance_level)}</td><td>${badge(d.status)}${d.fail_reason ? " " + d.fail_reason.slice(0, 40) : ""}</td></tr>`).join("")}</table>`;
+  } catch (e) { box.textContent = "❌ " + e.message; }
+}
+
+async function loadAudit() {
+  const box = document.getElementById("audit-list");
+  try {
+    const logs = await api("/audit-logs?limit=50");
+    if (!logs.length) { box.textContent = "（暂无日志）"; return; }
+    const icon = { upload: "📤", query: "💬", denied: "🚫", perm_change: "🔐" };
+    box.innerHTML = `<table><tr><th>时间</th><th>用户</th><th>动作</th><th>对象</th><th>详情</th></tr>${logs.map(l =>
+      `<tr><td>${l.created_at.slice(5, 16)}</td><td>用户${l.user_id}</td><td>${icon[l.action] || ""} ${l.action}</td><td>${l.target}</td><td>${(l.detail || "").slice(0, 40)}</td></tr>`).join("")}</table>`;
+  } catch (e) { box.textContent = "❌ " + e.message; }
+}
+
+if (token && me) enterApp();
+</script>
+</body>
+</html>
