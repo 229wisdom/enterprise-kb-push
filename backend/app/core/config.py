@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     chunk_token_budget: int = 512     # 每块 token 预算
     retrieve_top_k: int = 8           # 粗召回数量
     final_top_n: int = 3              # 最终送入生成的切片数
+    vector_distance_threshold: float = 0.62  # 余弦距离阈值（>此值视为不相关，丢弃）
+    rerank_enabled: bool = True       # 粗排后 LLM 精排（Rerank）
 
     # JWT 鉴权
     jwt_secret: str = "change-me-in-.env"

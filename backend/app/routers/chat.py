@@ -24,9 +24,10 @@ _NO_HIT = "未查到：你权限范围内的知识库中没有相关内容。如
 
 
 class ChatIn(BaseModel):
-    """提问请求。"""
+    """提问请求。history 为多轮对话历史 [{"question","answer"}...]（前端维护）。"""
 
     question: str
+    history: list[dict] = []
 
 
 @router.post("/stream")
@@ -35,7 +36,8 @@ def ask_stream(body: ChatIn, db: Session = Depends(get_db), user: User = Depends
 
     事件格式: data: {"type":"citations"|"token"|"done"|"error", ...}
     """
-    hits = retrieval.hybrid_search(db, user, body.question)
+    query = retrieval.rewrite_question(db, body.history, body.question)  # 多轮改写
+    hits = retrieval.hybrid_search(db, user, query)
 
     if not hits:
         audit.log(db, user.id, "query", body.question[:100], "未命中")
@@ -57,7 +59,7 @@ def ask_stream(body: ChatIn, db: Session = Depends(get_db), user: User = Depends
         yield f"data: {json.dumps({'type': 'citations', 'items': citations}, ensure_ascii=False)}\n\n"
         full = []
         try:
-            for delta in chat_stream(db, _SYSTEM_PROMPT, f"【资料】\n{sources}\n\n【问题】{body.question}"):
+            for delta in chat_stream(db, _SYSTEM_PROMPT, f"【资料】\n{sources}\n\n【问题】{query}"):
                 full.append(delta)
                 yield f"data: {json.dumps({'type': 'token', 'text': delta}, ensure_ascii=False)}\n\n"
         except ChatError as e:

@@ -325,6 +325,8 @@ async function openDoc(id, title) {
   } catch (e) { alert("❌ " + e.message); }
 }
 
+let HISTORY = [];  // 多轮对话历史 [{question, answer}...]，随每次提问发给后端做查询改写
+
 async function ask() {
   const q = document.getElementById("chat-q").value.trim();
   if (!q) return;
@@ -337,7 +339,7 @@ async function ask() {
     const res = await fetch("/chat/stream", {
       method: "POST",
       headers: Object.assign({ "Content-Type": "application/json" }, authHeader()),
-      body: JSON.stringify({ question: q })
+      body: JSON.stringify({ question: q, history: HISTORY.slice(-4) })
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -365,6 +367,7 @@ async function ask() {
     if (citations.length) {
       box.insertAdjacentHTML("beforeend", `<div class="cite">📎 引用：${citations.map(c => `[${c.ref}]《${c.doc_title}》切片${c.chunk_index}`).join("　")}</div>`);
     }
+    HISTORY.push({ question: q, answer: box.textContent });  // 记入历史供下轮改写
   } catch (e) { box.textContent = "❌ " + e.message; }
   log.scrollTop = log.scrollHeight;
 }
