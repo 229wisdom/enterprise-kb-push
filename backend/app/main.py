@@ -18,8 +18,20 @@ app = FastAPI(
 
 @app.on_event("startup")
 def init_db() -> None:
-    """启动时自动建表（MVP 阶段免迁移工具）。"""
+    """启动时自动建表 + 恢复中断的解析任务（parsing → failed 可重试）。"""
     Base.metadata.create_all(engine)
+    from app.models.database import SessionLocal
+    from app.models.tables import Document
+    db = SessionLocal()
+    try:
+        orphaned = db.query(Document).filter_by(status="parsing").all()
+        for doc in orphaned:
+            doc.status = "failed"
+            doc.fail_reason = "任务中断（服务重启），请点击重试"
+        if orphaned:
+            db.commit()
+    finally:
+        db.close()
 
 
 from app.routers import admin, audit, auth, chat, documents, search, settings  # noqa: E402
